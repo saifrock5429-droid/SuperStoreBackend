@@ -23,7 +23,7 @@ app.use(cookieParser()); // Cookies read karne ke liye
 // CORS Configuration (Frontend connectivity ke liye best practice)
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:5173"], 
+    origin: ["http://localhost:3000", "http://localhost:5173","https://super-store-hazel.vercel.app/"], 
     credentials: true,
   })
 );
