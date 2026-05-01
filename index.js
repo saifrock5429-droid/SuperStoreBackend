@@ -27,8 +27,8 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: "120mb" }));
-app.use(express.urlencoded({ limit: "120mb", extended: true }));
+app.use(express.json({ limit: "500mb" }));
+app.use(express.urlencoded({ limit: "500mb", extended: true }));
 
 // File Upload Middleware (Temp files ke saath)
 app.use(
