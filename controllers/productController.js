@@ -11,50 +11,51 @@ exports.getAllProducts = async (req, res) => {
   }
 };
 
+// --- NEW: Added getUploadSignature to bypass Vercel 4.5MB limit ---
+// This endpoint gives the frontend a secure signature so it can upload directly to Cloudinary
+exports.getUploadSignature = async (req, res) => {
+  try {
+    const timestamp = Math.round((new Date).getTime() / 1000);
+    const signature = cloudinary.utils.api_sign_request(
+      { timestamp: timestamp },
+      process.env.API_SECRET
+    );
+    res.status(200).json({
+      timestamp,
+      signature,
+      cloudName: process.env.CLOUD_NAME,
+      apiKey: process.env.API_KEY
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to generate signature", error: err.message });
+  }
+};
+
 // Add Product
 exports.addProduct = async (req, res) => {
   try {
-    const { name, category, price, originalPrice } = req.body;
+    // --- CHANGED: Now we receive the direct Cloudinary URLs from the frontend ---
+    // We no longer process req.files here because Vercel blocks files > 4.5MB
+    const { name, category, price, originalPrice, image, galleryUrls } = req.body;
     
-    if (!req.files || !req.files.image) {
-      return res.status(400).json({ message: "Main image is required" });
+    if (!image) {
+      return res.status(400).json({ message: "Main image URL is required" });
     }
-
-    // 1. Upload Main Image
-    const mainImgResult = await cloudinary.uploader.upload(req.files.image.tempFilePath, {
-      folder: "choicestore/products",
-      resource_type: "auto"
-    });
-
-    // 2. Upload Gallery Items (Images and Video)
-    let galleryUrls = [];
-    const fileKeys = Object.keys(req.files).filter(key => key !== 'image');
-
-    // We use Promise.all to upload all gallery items in parallel for better speed
-    const uploadPromises = fileKeys.map(key => 
-      cloudinary.uploader.upload(req.files[key].tempFilePath, {
-        folder: "choicestore/gallery",
-        resource_type: "auto" // Auto detects if it's an image or video
-      })
-    );
-
-    const results = await Promise.all(uploadPromises);
-    galleryUrls = results.map(result => result.secure_url);
 
     const product = new Product({
       name,
       category,
       price: Number(price),
       originalPrice: Number(originalPrice),
-      image: mainImgResult.secure_url,
-      gallery: galleryUrls
+      image: image, // Use the URL sent from the frontend
+      gallery: galleryUrls || [] // Use the gallery URLs sent from the frontend
     });
 
     await product.save();
     res.status(201).json({ message: "Product Added!", product });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Upload Failed", error: err.message });
+    res.status(500).json({ message: "Failed to add product", error: err.message });
   }
 };
 
