@@ -37,7 +37,7 @@ exports.addProduct = async (req, res) => {
     // --- CHANGED: Now we receive the direct Cloudinary URLs from the frontend ---
     // We no longer process req.files here because Vercel blocks files > 4.5MB
     const { name, category, price, originalPrice, image, galleryUrls } = req.body;
-    
+
     if (!image) {
       return res.status(400).json({ message: "Main image URL is required" });
     }
@@ -66,10 +66,10 @@ exports.addProduct = async (req, res) => {
 const getPublicId = (url) => {
   const splitUrl = url.split('/');
   const uploadIndex = splitUrl.findIndex(part => part === 'upload');
-  
+
   if (uploadIndex !== -1) {
     // Skip the version number (e.g., v1612345678) and grab the rest of the path
-    const pathParts = splitUrl.slice(uploadIndex + 2); 
+    const pathParts = splitUrl.slice(uploadIndex + 2);
     const fullPath = pathParts.join('/');
     // Remove the file extension (.jpg, .mp4, etc.)
     return fullPath.substring(0, fullPath.lastIndexOf('.'));
@@ -89,7 +89,7 @@ const getResourceType = (url) => {
 exports.deleteProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
-    
+
     if (!product) {
       return res.status(404).json({ message: "Product not found" });
     }
@@ -114,10 +114,74 @@ exports.deleteProduct = async (req, res) => {
 
     // 3. Delete from MongoDB
     await Product.findByIdAndDelete(req.params.id);
-    
+
     res.status(200).json({ message: "Product and associated media deleted successfully" });
   } catch (err) {
     console.error("Delete Error:", err);
     res.status(500).json({ message: "Delete Failed", error: err.message });
+  }
+};
+
+// Edit / Update Product
+exports.editProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, category, price, originalPrice, image, galleryUrls } = req.body;
+
+    // 1. Fetch current product from MongoDB
+    const existingProduct = await Product.findById(id);
+    if (!existingProduct) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    // 2. Clean up replaced Main Image from Cloudinary
+    if (image && existingProduct.image && image !== existingProduct.image) {
+      const oldPublicId = getPublicId(existingProduct.image);
+      if (oldPublicId) {
+        await cloudinary.uploader.destroy(oldPublicId, {
+          resource_type: getResourceType(existingProduct.image)
+        });
+      }
+    }
+
+    // 3. Clean up removed or replaced Gallery Media from Cloudinary
+    const newGallery = galleryUrls || [];
+    const oldGallery = existingProduct.gallery || [];
+
+    // Find URLs that exist in old gallery but were removed in the edit modal
+    const removedGalleryItems = oldGallery.filter(
+      (oldUrl) => !newGallery.includes(oldUrl)
+    );
+
+    for (const removedUrl of removedGalleryItems) {
+      const publicId = getPublicId(removedUrl);
+      if (publicId) {
+        await cloudinary.uploader.destroy(publicId, {
+          resource_type: getResourceType(removedUrl)
+        });
+      }
+    }
+
+    // 4. Update MongoDB Document
+    const updatedProduct = await Product.findByIdAndUpdate(
+      id,
+      {
+        name,
+        category,
+        price: Number(price),
+        originalPrice: Number(originalPrice),
+        image,
+        gallery: newGallery // Map frontend 'galleryUrls' to schema field 'gallery'
+      },
+      { new: true, runValidators: true } // { new: true } returns updated doc
+    );
+
+    res.status(200).json({
+      message: "Product updated successfully",
+      product: updatedProduct
+    });
+  } catch (err) {
+    console.error("Update Error:", err);
+    res.status(500).json({ message: "Failed to update product", error: err.message });
   }
 };
